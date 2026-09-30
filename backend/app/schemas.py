@@ -19,12 +19,20 @@ class ActionResult(BaseModel):
     ok: bool
     message: str
     entry: dict[str, Any] | None = None
+    entries: list[dict[str, Any]] | None = None
 
 
 class EntryPayload(BaseModel):
     """登记或修改一条业务记录时提交的字段集合。"""
 
     values: dict[str, Any] = Field(default_factory=dict)
+    remark: str | None = None
+
+
+class BatchActionPayload(BaseModel):
+    """批量动作（如批量冻结）提交的记录编号集合。"""
+
+    ids: list[int] = Field(default_factory=list)
     remark: str | None = None
 
 
