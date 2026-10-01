@@ -14,7 +14,8 @@
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
-        <strong class="stat-value">{{ item.value }}</strong>
+        <strong class="stat-value">{{ item.count }}</strong>
+        <span class="stat-sub">结存 {{ item.balance }}</span>
       </article>
     </div>
 
@@ -65,18 +66,25 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import { request } from '@/api/client'
+import { fetchJson, request } from '@/api/client'
 
 type Row = Record<string, string | number | null>
+type StatBucket = { label: string; count: number; balance: number; frozen: number }
+type StockSummary = {
+  statuses: string[]
+  actions: string[]
+  stats: StatBucket[]
+  total_balance: number
+}
 
 const ENDPOINT = '/api/material'
 const columns = ["材料编号", "材料名称", "规格型号", "结存数量", "计量单位", "存放场地", "保管人员", "材料状态"]
-const actions = ["冻结材料", "解冻材料", "登记耗尽"]
-const statuses = ["正常可用", "临近不足", "已冻结", "已耗尽"]
-const stats = [{"label": "可用材料", "value": 0}, {"label": "储备不足材料", "value": 0}, {"label": "已冻结材料", "value": 0}]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
+// 动作列表与看板结存都以服务端库存台账为准，界面不再自己维护一套判断
+const actions = ref<string[]>([])
+const stats = ref<StatBucket[]>([])
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
@@ -104,6 +112,7 @@ async function runAction(action: string, row: Row) {
     if (!response.ok) {
       throw new Error('养护材料动作未生效，请稍后重试')
     }
+    // 动作生效后丢弃界面上的临时数据，按服务端台账重算列表与看板
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '养护材料操作失败'
@@ -114,13 +123,18 @@ async function reload() {
   errorMessage.value = ''
   const query = new URLSearchParams(filters.value as Record<string, string>).toString()
   try {
-    const response = await request(`${ENDPOINT}?${query}`)
-    if (!response.ok) {
+    const [listResponse, summary] = await Promise.all([
+      request(`${ENDPOINT}?${query}`),
+      fetchJson<StockSummary>(`${ENDPOINT}/summary`),
+    ])
+    if (!listResponse.ok) {
       throw new Error('养护材料列表读取失败')
     }
-    const payload = await response.json()
+    const payload = await listResponse.json()
     rows.value = payload.items ?? []
     total.value = payload.total ?? rows.value.length
+    actions.value = summary.actions ?? []
+    stats.value = summary.stats ?? []
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '养护材料列表读取失败'
   }
